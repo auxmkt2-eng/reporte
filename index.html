@@ -257,67 +257,6 @@
     </div>
   </div>
 
-  <!-- RESUMEN POR RIESGO -->
-  <section>
-    <div class="section-head">
-      <h2>Resumen por nivel de riesgo</h2>
-      <div class="section-note">Una sola categoría concentra el 100% del pipeline: riesgo ALTO, sin excepción.</div>
-    </div>
-
-    <div class="risk-band">
-      <span class="tag">RIESGO ALTO</span>
-      <p>25 cotizaciones · $3,175,373 cotizados · 0 cerradas · 25 sin seguimiento · días abiertos: promedio 9.7, máximo 20</p>
-    </div>
-
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Riesgo</th><th>Estatus</th>
-            <th class="num-col">Cotizaciones</th>
-            <th class="num-col">Monto cotizado</th>
-            <th class="num-col">% del pipeline</th>
-            <th class="num-col">Cerradas</th>
-            <th class="num-col">Sin seguimiento</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><span class="pill alert">ALTO</span></td>
-            <td>Sin seguimiento</td>
-            <td class="num-col figure">25</td>
-            <td class="num-col figure">$3,175,373</td>
-            <td class="num-col figure">100%</td>
-            <td class="num-col figure">0</td>
-            <td class="num-col figure">25</td>
-          </tr>
-          <tr style="font-weight:600;">
-            <td colspan="2">TOTAL</td>
-            <td class="num-col figure">25</td>
-            <td class="num-col figure">$3,175,373</td>
-            <td class="num-col figure">100%</td>
-            <td class="num-col figure">0</td>
-            <td class="num-col figure">25</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- DESEMPEÑO POR KAM -->
-  <section>
-    <div class="section-head">
-      <h2>Desempeño por KAM</h2>
-      <div class="section-note">12 KAM sostienen el pipeline. Ordena por columna o expande cada uno para ver a sus médicos.</div>
-    </div>
-
-    <div class="toolbar">
-      <input type="text" id="kamSearch" placeholder="Buscar KAM…">
-    </div>
-
-    <div id="kamList" class="kam-list"></div>
-  </section>
-
   <!-- SEGUIMIENTO DE COTIZACIONES -->
   <section>
     <div class="section-head">
@@ -356,36 +295,6 @@
 </div>
 
 <script>
-const kamData = [
-  {kam:"MARYMAR", cot:6, cotizado:1327635, cerrado:0, estimado:199145.24, conv:0, pipeline:1327635, confirmadas:0, canceladas:0, medicos:6},
-  {kam:"SAMANTHA GUEVARA LEÓN", cot:2, cotizado:656352.2, cerrado:0, estimado:98452.836, conv:0, pipeline:656352.2, confirmadas:0, canceladas:0, medicos:2},
-  {kam:"ANAYELY", cot:3, cotizado:442015.8, cerrado:0, estimado:66302.373, conv:0, pipeline:442015.8, confirmadas:0, canceladas:0, medicos:3},
-  {kam:"EFRÁIN I. CAMARÍN", cot:3, cotizado:309230.2, cerrado:0, estimado:46384.5295, conv:0, pipeline:309230.2, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"LIZETTE GUADALUPE MARTINEZ SANCHEZ", cot:3, cotizado:144010.2, cerrado:0, estimado:21601.533, conv:0, pipeline:144010.2, confirmadas:0, canceladas:0, medicos:2},
-  {kam:"OSCAR", cot:1, cotizado:94606.49, cerrado:0, estimado:14190.9735, conv:0, pipeline:94606.49, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"DIGITAL", cot:1, cotizado:66812.55, cerrado:0, estimado:10021.8825, conv:0, pipeline:66812.55, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"ANAYELI", cot:1, cotizado:46515, cerrado:0, estimado:6977.25, conv:0, pipeline:46515, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"ALAIN", cot:2, cotizado:38673.44, cerrado:0, estimado:5801.016, conv:0, pipeline:38673.44, confirmadas:0, canceladas:0, medicos:2},
-  {kam:"XX", cot:1, cotizado:23972.48, cerrado:0, estimado:3595.872, conv:0, pipeline:23972.48, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"DAVID SANTIAGO", cot:1, cotizado:15660.89, cerrado:0, estimado:2349.1335, conv:0, pipeline:15660.89, confirmadas:0, canceladas:0, medicos:1},
-  {kam:"ANAYELY ALAIN", cot:1, cotizado:9888.75, cerrado:0, estimado:1483.3125, conv:0, pipeline:9888.75, confirmadas:0, canceladas:0, medicos:1}
-];
-
-const kamMedico = {
-  "ALAIN":[{medico:"DRA. JOEL NAVARRO ALVARADO",cot:1,cotizado:29001,cierres:0,diag:"Sin cierre registrado"},{medico:"Dr. Saúl Campos",cot:1,cotizado:9672.44,cierres:0,diag:"Sin cierre registrado"}],
-  "ANAYELI":[{medico:"DRA DAFNE I. CAMPA MONROY",cot:1,cotizado:46515,cierres:0,diag:"Sin cierre registrado"}],
-  "ANAYELY":[{medico:"ARTURO CONTRERAS MARIN",cot:1,cotizado:190403.3,cierres:0,diag:"Sin cierre registrado"},{medico:"DRA. DAFNE ITZEL CAMPA MONROY",cot:1,cotizado:129934.36,cierres:0,diag:"Sin cierre registrado"},{medico:"Mario Antonio Tellez Morales",cot:1,cotizado:121678.16,cierres:0,diag:"Sin cierre registrado"}],
-  "ANAYELY ALAIN":[{medico:"DR. ORESTES DE JESUS COBOS QUEVEDO",cot:1,cotizado:9888.75,cierres:0,diag:"Sin cierre registrado"}],
-  "DAVID SANTIAGO":[{medico:"DRA. VERÓNICA BRAVO VILLA",cot:1,cotizado:15660.89,cierres:0,diag:"Sin cierre registrado"}],
-  "DIGITAL":[{medico:"Mario Escobar Gómez",cot:1,cotizado:66812.55,cierres:0,diag:"Sin cierre registrado"}],
-  "EFRÁIN I. CAMARÍN":[{medico:"EFRÁIN I. CAMARÍN",cot:3,cotizado:309230.196667,cierres:0,diag:"EFRÁIN I. CAMARÍN no registra cierres en 3 cotizaciones"}],
-  "LIZETTE GUADALUPE MARTINEZ SANCHEZ":[{medico:"Leticia Vazquez Cortés",cot:1,cotizado:125585.083333,cierres:0,diag:"Sin cierre registrado"},{medico:"Francisco Tapia Gil",cot:2,cotizado:18425.136667,cierres:0,diag:"Francisco Tapia Gil no registra cierres en 2 cotizaciones"}],
-  "MARYMAR":[{medico:"Irineo Domínguez Gabriel",cot:1,cotizado:543537.3,cierres:0,diag:"Sin cierre registrado"},{medico:"DRA. JAQUELIN AGUIRRE",cot:1,cotizado:434504.2,cierres:0,diag:"Sin cierre registrado"},{medico:"David Huitzil",cot:1,cotizado:249347.82,cierres:0,diag:"Sin cierre registrado"},{medico:"Regina Barragan Carrillo",cot:1,cotizado:78895.38,cierres:0,diag:"Sin cierre registrado"},{medico:"Jaqueline Aguirre",cot:1,cotizado:11899.57,cierres:0,diag:"Sin cierre registrado"},{medico:"MARLID CRUZ",cot:1,cotizado:9450.663333,cierres:0,diag:"Sin cierre registrado"}],
-  "OSCAR":[{medico:"Dra. Lizbeth Enriquez Román",cot:1,cotizado:94606.49,cierres:0,diag:"Sin cierre registrado"}],
-  "SAMANTHA GUEVARA LEÓN":[{medico:"DRA. SANDRA CARRILLO VÁZQUEZ",cot:1,cotizado:347369,cierres:0,diag:"Sin cierre registrado"},{medico:"Universität Freiburg  Chemoambulanz",cot:1,cotizado:308983.24,cierres:0,diag:"Sin cierre registrado"}],
-  "XX":[{medico:"DRA. MARICELA SARAI SILVA GARCIA",cot:1,cotizado:23972.48,cierres:0,diag:"Sin cierre registrado"}]
-};
-
 const segData = [
   {fecha:"2026-08-14",folio:"—",kam:"LIZETTE GUADALUPE MARTINEZ SANCHEZ",medico:"Leticia Vazquez Cortés",paciente:"Selene Ríos Fierros",monto:125585.083333,dias:17},
   {fecha:"2026-08-18",folio:"—",kam:"EFRÁIN I. CAMARÍN",medico:"EFRÁIN I. CAMARÍN",paciente:"ISIDRO SANCHEZ RODRIGUEZ",monto:180080.816667,dias:13},
@@ -415,49 +324,6 @@ const segData = [
 ];
 
 const money = v => "$" + Math.round(v).toLocaleString("en-US");
-
-// ---- KAM LIST ----
-const maxPipeline = Math.max(...kamData.map(k=>k.pipeline));
-function renderKamList(filter){
-  const list = document.getElementById('kamList');
-  list.innerHTML = "";
-  const f = (filter||"").toLowerCase();
-  kamData
-    .filter(k => k.kam.toLowerCase().includes(f))
-    .sort((a,b)=>b.cotizado-a.cotizado)
-    .forEach(k=>{
-      const det = document.createElement('details');
-      det.className = 'kam-item';
-      const pct = (k.pipeline/maxPipeline*100).toFixed(0);
-      det.innerHTML = `
-        <summary>
-          <span class="arrow">▸</span>
-          <span class="name">${k.kam}</span>
-          <span class="mini-stat">${k.cot} cot.</span>
-          <div class="bar-wrap"><i style="width:${pct}%"></i></div>
-          <span class="mini-stat" style="min-width:110px;text-align:right;">${money(k.cotizado)}</span>
-          <span class="pill alert" style="min-width:70px;text-align:center;">0% conv.</span>
-        </summary>
-        <div class="kam-detail">
-          <table>
-            <thead><tr><th>Médico</th><th class="num-col">Cotizaciones</th><th class="num-col">Cotizado</th><th class="num-col">Cierres</th><th>Diagnóstico</th></tr></thead>
-            <tbody>
-              ${(kamMedico[k.kam]||[]).map(m=>`
-                <tr>
-                  <td>${m.medico}</td>
-                  <td class="num-col figure">${m.cot}</td>
-                  <td class="num-col figure">${money(m.cotizado)}</td>
-                  <td class="num-col figure">${m.cierres}</td>
-                  <td>${m.diag}</td>
-                </tr>`).join("")}
-            </tbody>
-          </table>
-        </div>`;
-      list.appendChild(det);
-    });
-}
-renderKamList("");
-document.getElementById('kamSearch').addEventListener('input', e=>renderKamList(e.target.value));
 
 // ---- SEGUIMIENTO TABLE ----
 const kamFilterSel = document.getElementById('segKamFilter');
