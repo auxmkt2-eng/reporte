@@ -50,18 +50,21 @@ const KAM_ALIASES = new Map([
   [['LIZETTEGUADALUPEMARTINEZSANCHEZ'].map(kamKey), 'LIZETTE GUADALUPE MARTINEZ SANCHEZ'],
   [['OSCAR'].map(kamKey), 'OSCAR'],
   [['DIGITAL'].map(kamKey), 'DIGITAL'],
-  [['ALAIN', 'ALAINRAMIREZ'].map(kamKey), 'ALAIN RAMIREZ'],
+  [['ALAIN', 'ALAINRAMIREZ', 'DRALAINRAMIREZ'].map(kamKey), 'ALAIN RAMIREZ'],
   [['XX'].map(kamKey), 'XX'],
   [['DAVIDSANTIAGO'].map(kamKey), 'DAVID SANTIAGO'],
   [['BERENICE'].map(kamKey), 'BERENICE'],
   [['DRLIYDAVID', 'DRLIY\u005cDAVID'].map(kamKey), 'DR LIY\\DAVID'],
   [['DRESPANA', 'DRESPANA'].map(kamKey), 'DR. ESPAÑA'],
-  [['ENRIQUEMUNOZ'].map(kamKey), 'ENRIQUE MUÑOZ']
+  [['ENRIQUE', 'ENRIQUEMUNOZ'].map(kamKey), 'ENRIQUE MUÑOZ']
 ].flatMap(([aliases, name]) => aliases.map(alias => [alias, name])));
 function canonicalKam(value) {
   const raw = String(value || '').trim();
   if (!raw) return 'Sin KAM asignado';
-  return KAM_ALIASES.get(kamKey(raw)) || raw.toLocaleUpperCase('es-MX');
+  const key = kamKey(raw);
+  // Las fuentes registran a Efraín con varios segundos apellidos; todos corresponden al mismo KAM acordado.
+  if (key.includes('EFRAIN') && key.includes('CAMARIN')) return 'EFRÁIN I. CAMARÍN';
+  return KAM_ALIASES.get(key) || raw.toLocaleUpperCase('es-MX');
 }
 
 function first(data, keys) {
