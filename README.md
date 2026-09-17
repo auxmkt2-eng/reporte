@@ -1,6 +1,8 @@
 # Reporte Innvida en tiempo real
 
-Este reporte obtiene **Monto cotizado total** y **Pipeline abierto** de las fuentes Firebase de Innvida. El **Monto facturado** se calcula con el campo `monto_del_servicio` de la tabla `cotizaciones` de Supabase de Llenado SAI y se actualiza al recibir cambios en esa tabla.
+Este reporte obtiene **Monto cotizado total** y **Pipeline abierto** exclusivamente de las fuentes Firebase de **Sanaré** (`sanare` y `nuevoSanare`); Nomad no se consulta. El **Monto facturado** se calcula con el campo `monto_del_servicio` de la tabla `cotizaciones` de Supabase de Llenado SAI y se actualiza al recibir cambios en esa tabla.
+
+Todos los cálculos usan el mismo corte: registros desde el **01/06/2026** inclusive. En Firebase se filtra por fecha de emisión; en Llenado SAI se filtra por `fecha_infusion`.
 
 Puede arrancar el servidor desde la carpeta raíz con `ABRIR-DASHBOARD.cmd` y abrir `http://localhost:4173/reporte-tiempo-real/`, o servir esta carpeta con cualquier servidor estático. No abra el HTML directamente, porque Firebase requiere HTTP/HTTPS.
 

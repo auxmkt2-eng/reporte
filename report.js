@@ -5,6 +5,8 @@ import { firebaseProjects } from './firebase-config.js';
 import { supabaseConfig } from './supabase-config.js';
 
 const $ = selector => document.querySelector(selector);
+const REPORT_START = new Date(2026, 5, 1);
+const REPORT_START_ISO = '2026-06-01';
 const money = value => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value || 0);
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[char]);
 const terminal = status => /cerrad|aceptad|perdid|rechaz|cancel|vencid/i.test(status || '');
@@ -13,6 +15,12 @@ const dateValue = value => {
   if (!value) return null;
   if (typeof value?.toDate === 'function') return value.toDate();
   if (value?.seconds) return new Date(value.seconds * 1000);
+  if (typeof value === 'string') {
+    const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    const mexican = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (mexican) return new Date(Number(mexican[3]), Number(mexican[2]) - 1, Number(mexican[1]));
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
@@ -148,7 +156,8 @@ function connect() {
     const db = getFirestore(initializeApp(config, `reporte-${key}`));
     onSnapshot(collection(db, 'cotizaciones'), snapshot => {
       sources.set(key, snapshot.docs.map(doc => normalize(doc, key.toUpperCase())));
-      rows = [...sources.values()].flat();
+      // Mantiene el mismo periodo histórico que Llenado SAI: desde el 01/06/2026.
+      rows = [...sources.values()].flat().filter(row => row.fecha && row.fecha >= REPORT_START);
       render();
       firebaseStatus = `Firebase en tiempo real · ${configured.length} fuente(s) · ${new Date().toLocaleTimeString('es-MX')}`;
       renderConnectionState();
@@ -168,7 +177,7 @@ async function connectSupabase() {
     let count = null;
     let allBillingRows = [];
     do {
-      const { data, error, count: totalCount } = await client.from('cotizaciones').select('monto_del_servicio', { count: 'exact' }).range(from, from + pageSize - 1);
+      const { data, error, count: totalCount } = await client.from('cotizaciones').select('monto_del_servicio,fecha_infusion', { count: 'exact' }).gte('fecha_infusion', REPORT_START_ISO).range(from, from + pageSize - 1);
       if (error) throw error;
       count ??= totalCount;
       allBillingRows = allBillingRows.concat(data || []);
