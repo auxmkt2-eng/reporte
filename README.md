@@ -1,6 +1,6 @@
 # Reporte Innvida en tiempo real
 
-Este reporte contiene la misma configuración Firebase que la herramienta de Innvida y escucha, en tiempo real, la colección `cotizaciones` de cada fuente configurada.
+Este reporte obtiene **Monto cotizado total** y **Pipeline abierto** de las fuentes Firebase de Innvida. El **Monto facturado** se calcula con el campo `monto_del_servicio` de la tabla `cotizaciones` de Supabase de Llenado SAI y se actualiza al recibir cambios en esa tabla.
 
 Puede arrancar el servidor desde la carpeta raíz con `ABRIR-DASHBOARD.cmd` y abrir `http://localhost:4173/reporte-tiempo-real/`, o servir esta carpeta con cualquier servidor estático. No abra el HTML directamente, porque Firebase requiere HTTP/HTTPS.
 

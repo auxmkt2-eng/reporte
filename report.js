@@ -1,6 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getFirestore, collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { firebaseProjects } from './firebase-config.js';
+import { supabaseConfig } from './supabase-config.js';
 
 const $ = selector => document.querySelector(selector);
 const money = value => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(value || 0);
@@ -17,6 +19,17 @@ const dateValue = value => {
 const dayDifference = value => {
   const date = dateValue(value);
   return date ? Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000)) : null;
+};
+const numericAmount = value => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value !== 'string') return 0;
+  let raw = value.trim().replace(/[^0-9,.-]/g, '');
+  if (!raw) return 0;
+  const comma = raw.lastIndexOf(',');
+  const dot = raw.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) raw = comma > dot ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+  else if (comma >= 0) raw = /,\d{1,2}$/.test(raw) ? raw.replace(',', '.') : raw.replace(/,/g, '');
+  return Number(raw) || 0;
 };
 
 function first(data, keys) {
@@ -36,7 +49,7 @@ function normalize(snapshot, source) {
     kam: data.kam || 'Sin KAM asignado',
     medico: data.medico || 'Sin médico',
     paciente: data.paciente || 'Sin paciente',
-    monto: Number(data.total || data.importe || data.monto || 0),
+    monto: numericAmount(first(data, ['total', 'importe', 'monto', 'montoTotal', 'totalCotizacion'])),
     status: first(data, ['status1', 'estatus', 'status']) || 'Sin seguimiento',
     dias: dayDifference(activityBase),
     hasFollowUp: Boolean(lastActivity)
@@ -45,6 +58,14 @@ function normalize(snapshot, source) {
 
 let rows = [];
 let sort = { key: 'dias', direction: -1 };
+let billedAmount = 0;
+let billedCount = 0;
+let firebaseStatus = 'Conectando a Firebase…';
+let supabaseStatus = 'Conectando a captura SAI…';
+
+function renderConnectionState() {
+  $('#connectionState').textContent = `${firebaseStatus} · ${supabaseStatus}`;
+}
 
 function activeRows() { return rows.filter(row => !terminal(row.status)); }
 function kamSummary() {
@@ -76,12 +97,11 @@ function renderCharts() {
 function renderKpis() {
   const active = activeRows();
   const total = rows.reduce((sum, row) => sum + row.monto, 0);
-  const closedRows = rows.filter(row => closed(row.status));
   const stale = active.filter(row => (row.dias || 0) >= 7);
   $('#quotedAmount').textContent = money(total);
   $('#quoteCount').textContent = `${rows.length} cotizaciones en todas las fuentes`;
-  $('#closedAmount').textContent = money(closedRows.reduce((sum, row) => sum + row.monto, 0));
-  $('#closedCount').textContent = `${closedRows.length} cotizaciones cerradas`;
+  $('#closedAmount').textContent = money(billedAmount);
+  $('#closedCount').textContent = `${billedCount} registros facturados en SAI`;
   $('#openAmount').textContent = money(active.reduce((sum, row) => sum + row.monto, 0));
   $('#openCount').textContent = `${active.length} cotizaciones activas`;
   $('#staleCount').textContent = `${stale.length} / ${active.length}`;
@@ -129,15 +149,53 @@ function connect() {
       sources.set(key, snapshot.docs.map(doc => normalize(doc, key.toUpperCase())));
       rows = [...sources.values()].flat();
       render();
-      $('#connectionState').textContent = `Firebase en tiempo real · ${configured.length} fuente(s) · actualizado ${new Date().toLocaleTimeString('es-MX')}`;
+      firebaseStatus = `Firebase en tiempo real · ${configured.length} fuente(s) · ${new Date().toLocaleTimeString('es-MX')}`;
+      renderConnectionState();
     }, error => {
       console.error(`Firebase ${key}`, error);
-      $('#connectionState').textContent = error.code === 'permission-denied' ? 'Firebase bloqueó la lectura: revise Authentication y las reglas de Firestore.' : `No se pudo leer ${key}: ${error.message}`;
+      firebaseStatus = error.code === 'permission-denied' ? 'Firebase bloqueó la lectura: revise Authentication y las reglas de Firestore.' : `No se pudo leer ${key}: ${error.message}`;
+      renderConnectionState();
     });
   });
+}
+
+async function connectSupabase() {
+  const client = createClient(supabaseConfig.url, supabaseConfig.anonKey);
+  const loadBilling = async () => {
+    const pageSize = 1000;
+    let from = 0;
+    let count = null;
+    let allBillingRows = [];
+    do {
+      const { data, error, count: totalCount } = await client.from('cotizaciones').select('monto_del_servicio', { count: 'exact' }).range(from, from + pageSize - 1);
+      if (error) throw error;
+      count ??= totalCount;
+      allBillingRows = allBillingRows.concat(data || []);
+      from += pageSize;
+      if (!(data || []).length) break;
+    } while (count === null || allBillingRows.length < count);
+    const billedRows = allBillingRows.filter(row => row.monto_del_servicio !== null && row.monto_del_servicio !== undefined && row.monto_del_servicio !== '');
+    billedAmount = billedRows.reduce((sum, row) => sum + numericAmount(row.monto_del_servicio), 0);
+    billedCount = billedRows.length;
+    render();
+    supabaseStatus = `Captura SAI · ${count ?? billedCount} registro(s) · ${new Date().toLocaleTimeString('es-MX')}`;
+    renderConnectionState();
+  };
+  try {
+    await loadBilling();
+    client.channel('reporte-sai-facturacion')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cotizaciones' }, () => loadBilling().catch(handleError))
+      .subscribe();
+  } catch (error) { handleError(error); }
+  function handleError(error) {
+    console.error('Supabase SAI', error);
+    supabaseStatus = `No se pudo leer captura SAI: ${error.message || 'verifique las políticas de Supabase'}`;
+    renderConnectionState();
+  }
 }
 
 document.querySelectorAll('#segTable thead th').forEach(th => th.addEventListener('click', () => { sort = { key: th.dataset.key, direction: sort.key === th.dataset.key ? -sort.direction : 1 }; renderTable(); }));
 $('#segSearch').addEventListener('input', renderTable);
 $('#segKamFilter').addEventListener('change', renderTable);
-try { connect(); } catch (error) { console.error(error); $('#connectionState').textContent = 'No se pudo cargar la configuración Firebase.'; }
+try { connect(); } catch (error) { console.error(error); firebaseStatus = 'No se pudo cargar la configuración Firebase.'; renderConnectionState(); }
+connectSupabase();
