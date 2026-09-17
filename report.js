@@ -140,7 +140,8 @@ function fillKamFilter() {
 function render() { fillKamFilter(); renderKpis(); renderCharts(); renderTable(); }
 
 function connect() {
-  const configured = Object.entries(firebaseProjects || {}).filter(([, config]) => config?.projectId);
+  // El reporte comercial solicitado es exclusivo de Sanaré; Nomad no se consulta.
+  const configured = Object.entries(firebaseProjects || {}).filter(([key, config]) => config?.projectId && key !== 'nomad');
   if (!configured.length) throw new Error('No hay fuentes Firebase configuradas.');
   const sources = new Map();
   configured.forEach(([key, config]) => {
