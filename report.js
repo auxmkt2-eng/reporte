@@ -39,6 +39,30 @@ const numericAmount = value => {
   else if (comma >= 0) raw = /,\d{1,2}$/.test(raw) ? raw.replace(',', '.') : raw.replace(/,/g, '');
   return Number(raw) || 0;
 };
+const kamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const KAM_ALIASES = new Map([
+  [['MARYMAR', 'MARYMARIA'].map(kamKey), 'MARYMAR'],
+  [['SAMANTHAGUEVARALEON'].map(kamKey), 'SAMANTHA GUEVARA LEÓN'],
+  [['SAMANTHAGUEVARA'].map(kamKey), 'SAMANTHA GUEVARA'],
+  [['ANAYELY', 'ANAYELI'].map(kamKey), 'ANAYELY'],
+  [['ANAYELYALAIN', 'ANAYELIALAIN'].map(kamKey), 'ANAYELY ALAIN'],
+  [['EFRAINICAMARIN', 'DREFRAINCAMARIN', 'DREFRAINICAMARIN', 'EFRAINCAMARIN'].map(kamKey), 'EFRÁIN I. CAMARÍN'],
+  [['LIZETTEGUADALUPEMARTINEZSANCHEZ'].map(kamKey), 'LIZETTE GUADALUPE MARTINEZ SANCHEZ'],
+  [['OSCAR'].map(kamKey), 'OSCAR'],
+  [['DIGITAL'].map(kamKey), 'DIGITAL'],
+  [['ALAIN', 'ALAINRAMIREZ'].map(kamKey), 'ALAIN RAMIREZ'],
+  [['XX'].map(kamKey), 'XX'],
+  [['DAVIDSANTIAGO'].map(kamKey), 'DAVID SANTIAGO'],
+  [['BERENICE'].map(kamKey), 'BERENICE'],
+  [['DRLIYDAVID', 'DRLIY\u005cDAVID'].map(kamKey), 'DR LIY\\DAVID'],
+  [['DRESPANA', 'DRESPANA'].map(kamKey), 'DR. ESPAÑA'],
+  [['ENRIQUEMUNOZ'].map(kamKey), 'ENRIQUE MUÑOZ']
+].flatMap(([aliases, name]) => aliases.map(alias => [alias, name])));
+function canonicalKam(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Sin KAM asignado';
+  return KAM_ALIASES.get(kamKey(raw)) || raw.toLocaleUpperCase('es-MX');
+}
 
 function first(data, keys) {
   return keys.map(key => data[key]).find(value => value !== undefined && value !== null && value !== '');
@@ -54,7 +78,7 @@ function normalize(snapshot, source) {
     source,
     fecha: dateValue(issuedAt),
     folio: data.folio || '—',
-    kam: data.kam || 'Sin KAM asignado',
+    kam: canonicalKam(data.kam),
     medico: data.medico || 'Sin médico',
     paciente: data.paciente || 'Sin paciente',
     monto: numericAmount(first(data, ['total', 'importe', 'monto', 'montoTotal', 'totalCotizacion'])),
