@@ -42,7 +42,7 @@ const numericAmount = value => {
 const kamKey = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const KAM_ALIASES = new Map([
   [['MARYMAR', 'MARYMARIA'].map(kamKey), 'MARYMAR'],
-  [['SAMANTHAGUEVARALEON'].map(kamKey), 'SAMANTHA GUEVARA LEÓN'],
+  [['SAMANTHAGUEVARALEON', 'SAMNTHAGUEVARALEON'].map(kamKey), 'SAMANTHA GUEVARA LEÓN'],
   [['SAMANTHAGUEVARA'].map(kamKey), 'SAMANTHA GUEVARA'],
   [['ANAYELY', 'ANAYELI'].map(kamKey), 'ANAYELY'],
   [['ANAYELYALAIN', 'ANAYELIALAIN'].map(kamKey), 'ANAYELY ALAIN'],
@@ -53,7 +53,7 @@ const KAM_ALIASES = new Map([
   [['ALAIN', 'ALAINRAMIREZ', 'DRALAINRAMIREZ'].map(kamKey), 'ALAIN RAMIREZ'],
   [['XX'].map(kamKey), 'XX'],
   [['DAVIDSANTIAGO'].map(kamKey), 'DAVID SANTIAGO'],
-  [['BERENICE'].map(kamKey), 'BERENICE'],
+  [['BERENICE', 'BERENICEORDAZNARANJO'].map(kamKey), 'BERENICE'],
   [['DRLIYDAVID', 'DRLIY\u005cDAVID'].map(kamKey), 'DR LIY\\DAVID'],
   [['DRESPANA', 'DRESPANA'].map(kamKey), 'DR. ESPAÑA'],
   [['ENRIQUE', 'ENRIQUEMUNOZ'].map(kamKey), 'ENRIQUE MUÑOZ']
@@ -64,7 +64,10 @@ function canonicalKam(value) {
   const key = kamKey(raw);
   // Las fuentes registran a Efraín con varios segundos apellidos; todos corresponden al mismo KAM acordado.
   if (key.includes('EFRAIN') && key.includes('CAMARIN')) return 'EFRÁIN I. CAMARÍN';
-  return KAM_ALIASES.get(key) || raw.toLocaleUpperCase('es-MX');
+  if (key.includes('GUEVARA') && key.includes('LEON')) return 'SAMANTHA GUEVARA LEÓN';
+  if (key === 'SAMANTHAGUEVARA' || key === 'SAMNTHAGUEVARA') return 'SAMANTHA GUEVARA';
+  // No se inventa un responsable: valores de canal, prueba o nombres fuera del catálogo quedan sin asignar.
+  return KAM_ALIASES.get(key) || 'Sin KAM asignado';
 }
 
 function first(data, keys) {
@@ -105,7 +108,7 @@ function renderConnectionState() {
 function activeRows() { return rows.filter(row => !terminal(row.status)); }
 function kamSummary() {
   const groups = new Map();
-  rows.forEach(row => {
+  rows.filter(row => row.kam !== 'Sin KAM asignado').forEach(row => {
     const current = groups.get(row.kam) || { kam: row.kam, count: 0, amount: 0 };
     current.count += 1;
     current.amount += row.monto;
@@ -118,15 +121,15 @@ function renderBars(target, values, valueKey, formatter, alert = false) {
   const root = $(target);
   if (!values.length) { root.innerHTML = '<p>No hay cotizaciones disponibles.</p>'; return; }
   const max = Math.max(...values.map(item => item[valueKey]), 1);
-  root.innerHTML = values.map(item => `<div class="bar-row ${alert ? 'alert' : ''}"><span title="${escapeHtml(item.label || item.kam || item.folio)}">${escapeHtml(item.label || item.kam || item.folio)}</span><div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`).join('');
+  root.innerHTML = `<div class="chart-list">${values.map(item => `<div class="bar-row ${alert ? 'alert' : ''}"><span title="${escapeHtml(item.label || item.kam || item.folio)}">${escapeHtml(item.label || item.kam || item.folio)}</span><div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`).join('')}</div>`;
 }
 
 function renderCharts() {
   const kams = kamSummary();
-  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count).slice(0, 5), 'count', value => `${value} cot.`);
-  renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count).slice(0, 5), 'count', value => `${value} cot.`);
-  renderBars('#largestAmountChart', [...rows].sort((a, b) => b.monto - a.monto).slice(0, 5).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
-  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias).slice(0, 5), 'dias', value => `${value} días`, true);
+  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`);
+  renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count), 'count', value => `${value} cot.`);
+  renderBars('#largestAmountChart', [...rows].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
+  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true);
 }
 
 function renderKpis() {
@@ -167,7 +170,7 @@ function renderTable() {
 
 function fillKamFilter() {
   const current = $('#segKamFilter').value;
-  const kams = [...new Set(rows.map(row => row.kam))].sort((a, b) => a.localeCompare(b, 'es-MX'));
+  const kams = [...new Set(rows.map(row => row.kam).filter(kam => kam !== 'Sin KAM asignado'))].sort((a, b) => a.localeCompare(b, 'es-MX'));
   $('#segKamFilter').innerHTML = '<option value="">Todos los KAM</option>' + kams.map(kam => `<option value="${escapeHtml(kam)}">${escapeHtml(kam)}</option>`).join('');
   $('#segKamFilter').value = kams.includes(current) ? current : '';
 }
