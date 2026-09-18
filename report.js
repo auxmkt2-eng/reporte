@@ -95,6 +95,7 @@ function normalize(snapshot, source) {
 }
 
 let rows = [];
+let billingRows = [];
 let sort = { key: 'dias', direction: -1 };
 let billedAmount = 0;
 let billedCount = 0;
@@ -105,10 +106,15 @@ function renderConnectionState() {
   $('#connectionState').textContent = `${firebaseStatus} · ${supabaseStatus}`;
 }
 
-function activeRows() { return rows.filter(row => !terminal(row.status)); }
+function rowsInPeriod() {
+  const start = dateValue($('#periodStart').value) || REPORT_START;
+  const end = dateValue($('#periodEnd').value);
+  return rows.filter(row => row.fecha && row.fecha >= start && (!end || row.fecha <= end));
+}
+function activeRows() { return rowsInPeriod().filter(row => !terminal(row.status)); }
 function kamSummary() {
   const groups = new Map();
-  rows.filter(row => row.kam !== 'Sin KAM asignado').forEach(row => {
+  rowsInPeriod().filter(row => row.kam !== 'Sin KAM asignado').forEach(row => {
     const current = groups.get(row.kam) || { kam: row.kam, count: 0, amount: 0 };
     current.count += 1;
     current.amount += row.monto;
@@ -128,16 +134,17 @@ function renderCharts() {
   const kams = kamSummary();
   renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`);
   renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count), 'count', value => `${value} cot.`);
-  renderBars('#largestAmountChart', [...rows].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
+  renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
   renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true);
 }
 
 function renderKpis() {
   const active = activeRows();
-  const total = rows.reduce((sum, row) => sum + row.monto, 0);
+  const scopedRows = rowsInPeriod();
+  const total = scopedRows.reduce((sum, row) => sum + row.monto, 0);
   const stale = active.filter(row => (row.dias || 0) >= 7);
   $('#quotedAmount').textContent = money(total);
-  $('#quoteCount').textContent = `${rows.length} cotizaciones en todas las fuentes`;
+  $('#quoteCount').textContent = `${scopedRows.length} cotizaciones Firebase en el periodo`;
   $('#closedAmount').textContent = money(billedAmount);
   $('#closedCount').textContent = `${billedCount} registros facturados en SAI`;
   $('#openAmount').textContent = money(active.reduce((sum, row) => sum + row.monto, 0));
@@ -170,12 +177,19 @@ function renderTable() {
 
 function fillKamFilter() {
   const current = $('#segKamFilter').value;
-  const kams = [...new Set(rows.map(row => row.kam).filter(kam => kam !== 'Sin KAM asignado'))].sort((a, b) => a.localeCompare(b, 'es-MX'));
+  const kams = [...new Set(rowsInPeriod().map(row => row.kam).filter(kam => kam !== 'Sin KAM asignado'))].sort((a, b) => a.localeCompare(b, 'es-MX'));
   $('#segKamFilter').innerHTML = '<option value="">Todos los KAM</option>' + kams.map(kam => `<option value="${escapeHtml(kam)}">${escapeHtml(kam)}</option>`).join('');
   $('#segKamFilter').value = kams.includes(current) ? current : '';
 }
 
-function render() { fillKamFilter(); renderKpis(); renderCharts(); renderTable(); }
+function refreshBillingForPeriod() {
+  const start = dateValue($('#periodStart').value) || REPORT_START;
+  const end = dateValue($('#periodEnd').value);
+  const scopedBilling = billingRows.filter(row => row.fecha && row.fecha >= start && (!end || row.fecha <= end) && row.monto !== null);
+  billedAmount = scopedBilling.reduce((sum, row) => sum + numericAmount(row.monto), 0);
+  billedCount = scopedBilling.length;
+}
+function render() { refreshBillingForPeriod(); fillKamFilter(); renderKpis(); renderCharts(); renderTable(); }
 
 function connect() {
   // El reporte comercial solicitado es exclusivo de Sanaré; Nomad no se consulta.
@@ -214,9 +228,7 @@ async function connectSupabase() {
       from += pageSize;
       if (!(data || []).length) break;
     } while (count === null || allBillingRows.length < count);
-    const billedRows = allBillingRows.filter(row => row.monto_del_servicio !== null && row.monto_del_servicio !== undefined && row.monto_del_servicio !== '');
-    billedAmount = billedRows.reduce((sum, row) => sum + numericAmount(row.monto_del_servicio), 0);
-    billedCount = billedRows.length;
+    billingRows = allBillingRows.map(row => ({ fecha: dateValue(row.fecha_infusion), monto: row.monto_del_servicio }));
     render();
     supabaseStatus = `Captura SAI · ${count ?? billedCount} registro(s) · ${new Date().toLocaleTimeString('es-MX')}`;
     renderConnectionState();
@@ -237,5 +249,6 @@ async function connectSupabase() {
 document.querySelectorAll('#segTable thead th').forEach(th => th.addEventListener('click', () => { sort = { key: th.dataset.key, direction: sort.key === th.dataset.key ? -sort.direction : 1 }; renderTable(); }));
 $('#segSearch').addEventListener('input', renderTable);
 $('#segKamFilter').addEventListener('change', renderTable);
+$('#periodFilter').addEventListener('submit', event => { event.preventDefault(); if ($('#periodEnd').value && $('#periodEnd').value < $('#periodStart').value) { $('#periodEnd').value = $('#periodStart').value; } render(); });
 try { connect(); } catch (error) { console.error(error); firebaseStatus = 'No se pudo cargar la configuración Firebase.'; renderConnectionState(); }
 connectSupabase();
