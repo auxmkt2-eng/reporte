@@ -129,7 +129,10 @@ function renderBars(target, values, valueKey, formatter, alert = false, options 
   const max = Math.max(...values.map(item => item[valueKey]), 1);
   root.innerHTML = `<div class="chart-list">${values.map(item => {
     const label = item.label || item.kam || item.folio;
-    const name = options.onSelect ? `<button type="button" class="bar-label" data-kam="${escapeHtml(item.kam)}" title="Ver cotizaciones de ${escapeHtml(item.kam)}">${escapeHtml(label)}</button>` : `<span title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    const action = item.id
+      ? `data-quote-id="${escapeHtml(item.id)}" data-source="${escapeHtml(item.source)}" title="Ver cotización ${escapeHtml(item.folio)} de ${escapeHtml(item.kam)}"`
+      : `data-kam="${escapeHtml(item.kam)}" title="Ver cotizaciones de ${escapeHtml(item.kam)}"`;
+    const name = options.onSelect ? `<button type="button" class="bar-label" ${action}>${escapeHtml(label)}</button>` : `<span title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
     return `<div class="bar-row ${alert ? 'alert' : ''}">${name}<div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`;
   }).join('')}</div>`;
 }
@@ -138,8 +141,8 @@ function renderCharts() {
   const kams = kamSummary();
   renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`, false, { onSelect: showKamQuotes });
   renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count), 'count', value => `${value} cot.`);
-  renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
-  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true);
+  renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money, false, { onSelect: showQuoteDetails });
+  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true, { onSelect: showQuoteDetails });
 }
 
 function renderKpis() {
@@ -190,6 +193,22 @@ function showKamQuotes(kam) {
   const dialog = $('#kamQuotesDialog');
   if (dialog.open) dialog.close();
   dialog.showModal();
+}
+
+function showQuoteDetails(row) {
+  $('#kamQuotesTitle').textContent = `Cotización de ${row.kam}`;
+  $('#kamQuotesSummary').textContent = `Folio ${row.folio} · ${row.fecha ? row.fecha.toLocaleDateString('es-MX') : 'Sin fecha de emisión'}`;
+  $('#kamQuotesBody').innerHTML = `<tr><td>${row.fecha ? row.fecha.toLocaleDateString('es-MX') : '—'}</td><td class="figure">${escapeHtml(row.folio)}</td><td>${escapeHtml(row.medico)}</td><td>${escapeHtml(row.paciente)}</td><td class="num-col figure">${money(row.monto)}</td><td>${escapeHtml(row.status)}</td><td class="num-col">${row.dias ?? '—'}</td></tr>`;
+  const dialog = $('#kamQuotesDialog');
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
+function openQuoteFromChart(event) {
+  const button = event.target.closest('.bar-label');
+  if (!button?.dataset.quoteId) return;
+  const row = rows.find(item => item.id === button.dataset.quoteId && item.source === button.dataset.source);
+  if (row) showQuoteDetails(row);
 }
 
 function fillKamFilter() {
@@ -270,6 +289,8 @@ $('#mostQuotesChart').addEventListener('click', event => {
   const button = event.target.closest('.bar-label');
   if (button?.dataset.kam) showKamQuotes(button.dataset.kam);
 });
+$('#staleQuotesChart').addEventListener('click', openQuoteFromChart);
+$('#largestAmountChart').addEventListener('click', openQuoteFromChart);
 $('#kamQuotesDialog').addEventListener('click', event => {
   if (event.target === event.currentTarget || event.target.closest('[data-close-dialog]')) event.currentTarget.close();
 });
