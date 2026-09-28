@@ -123,16 +123,20 @@ function kamSummary() {
   return [...groups.values()];
 }
 
-function renderBars(target, values, valueKey, formatter, alert = false) {
+function renderBars(target, values, valueKey, formatter, alert = false, options = {}) {
   const root = $(target);
   if (!values.length) { root.innerHTML = '<p>No hay cotizaciones disponibles.</p>'; return; }
   const max = Math.max(...values.map(item => item[valueKey]), 1);
-  root.innerHTML = `<div class="chart-list">${values.map(item => `<div class="bar-row ${alert ? 'alert' : ''}"><span title="${escapeHtml(item.label || item.kam || item.folio)}">${escapeHtml(item.label || item.kam || item.folio)}</span><div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`).join('')}</div>`;
+  root.innerHTML = `<div class="chart-list">${values.map(item => {
+    const label = item.label || item.kam || item.folio;
+    const name = options.onSelect ? `<button type="button" class="bar-label" data-kam="${escapeHtml(item.kam)}" title="Ver cotizaciones de ${escapeHtml(item.kam)}">${escapeHtml(label)}</button>` : `<span title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
+    return `<div class="bar-row ${alert ? 'alert' : ''}">${name}<div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`;
+  }).join('')}</div>`;
 }
 
 function renderCharts() {
   const kams = kamSummary();
-  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`);
+  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`, false, { onSelect: showKamQuotes });
   renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count), 'count', value => `${value} cot.`);
   renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
   renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true);
@@ -173,6 +177,19 @@ function renderTable() {
     return `<tr><td>${row.fecha ? row.fecha.toLocaleDateString('es-MX') : '—'}</td><td class="figure">${escapeHtml(row.folio)}</td><td>${escapeHtml(row.kam)}</td><td>${escapeHtml(row.medico)}</td><td>${escapeHtml(row.paciente)}</td><td class="num-col figure">${money(row.monto)}</td><td class="num-col"><div class="days-bar-wrap"><span class="figure">${row.dias ?? '—'}</span><div class="days-bar"><i style="width:${width}%"></i></div></div></td></tr>`;
   }).join('') || '<tr><td colspan="7">No hay cotizaciones abiertas con estos filtros.</td></tr>';
   document.querySelectorAll('#segTable thead th').forEach(th => th.classList.toggle('sorted', th.dataset.key === sort.key && sort.direction === -1));
+}
+
+function showKamQuotes(kam) {
+  const quoteRows = rowsInPeriod()
+    .filter(row => row.kam === kam)
+    .sort((left, right) => (right.fecha?.getTime() || 0) - (left.fecha?.getTime() || 0));
+  const total = quoteRows.reduce((sum, row) => sum + row.monto, 0);
+  $('#kamQuotesTitle').textContent = `Cotizaciones de ${kam}`;
+  $('#kamQuotesSummary').textContent = `${quoteRows.length} cotizaciones · ${money(total)} en el periodo seleccionado`;
+  $('#kamQuotesBody').innerHTML = quoteRows.map(row => `<tr><td>${row.fecha ? row.fecha.toLocaleDateString('es-MX') : '—'}</td><td class="figure">${escapeHtml(row.folio)}</td><td>${escapeHtml(row.medico)}</td><td>${escapeHtml(row.paciente)}</td><td class="num-col figure">${money(row.monto)}</td><td>${escapeHtml(row.status)}</td><td class="num-col">${row.dias ?? '—'}</td></tr>`).join('') || '<tr><td colspan="7">No hay cotizaciones para este KAM en el periodo seleccionado.</td></tr>';
+  const dialog = $('#kamQuotesDialog');
+  if (dialog.open) dialog.close();
+  dialog.showModal();
 }
 
 function fillKamFilter() {
@@ -249,6 +266,13 @@ async function connectSupabase() {
 document.querySelectorAll('#segTable thead th').forEach(th => th.addEventListener('click', () => { sort = { key: th.dataset.key, direction: sort.key === th.dataset.key ? -sort.direction : 1 }; renderTable(); }));
 $('#segSearch').addEventListener('input', renderTable);
 $('#segKamFilter').addEventListener('change', renderTable);
+$('#mostQuotesChart').addEventListener('click', event => {
+  const button = event.target.closest('.bar-label');
+  if (button?.dataset.kam) showKamQuotes(button.dataset.kam);
+});
+$('#kamQuotesDialog').addEventListener('click', event => {
+  if (event.target === event.currentTarget || event.target.closest('[data-close-dialog]')) event.currentTarget.close();
+});
 $('#periodFilter').addEventListener('submit', event => { event.preventDefault(); if ($('#periodEnd').value && $('#periodEnd').value < $('#periodStart').value) { $('#periodEnd').value = $('#periodStart').value; } render(); });
 try { connect(); } catch (error) { console.error(error); firebaseStatus = 'No se pudo cargar la configuración Firebase.'; renderConnectionState(); }
 connectSupabase();
