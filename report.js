@@ -3,6 +3,7 @@ import { getFirestore, collection, onSnapshot } from 'https://www.gstatic.com/fi
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { firebaseProjects } from './firebase-config.js';
 import { supabaseConfig } from './supabase-config.js';
+import { downloadCommercialWorkbook } from './excel-report.js';
 
 const $ = selector => document.querySelector(selector);
 const REPORT_START = new Date(2026, 5, 1);
@@ -97,8 +98,11 @@ function normalize(snapshot, source) {
 let rows = [];
 let billingRows = [];
 let sort = { key: 'dias', direction: -1 };
-let billedAmount = 0;
-let billedCount = 0;
+let period = { start: REPORT_START, end: null };
+let reportData;
+let firebaseReady = false;
+let billingReady = false;
+let exporting = false;
 let firebaseStatus = 'Conectando a Firebase…';
 let supabaseStatus = 'Conectando a captura SAI…';
 
@@ -106,10 +110,17 @@ function renderConnectionState() {
   $('#connectionState').textContent = `${firebaseStatus} · ${supabaseStatus}`;
 }
 
+function updateExportButton() {
+  $('#downloadExcel').disabled = !firebaseReady || !billingReady || exporting;
+}
+
+function inPeriod(row) {
+  const { start, end } = period;
+  return row.fecha && row.fecha >= start && (!end || row.fecha < new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1));
+}
+
 function rowsInPeriod() {
-  const start = dateValue($('#periodStart').value) || REPORT_START;
-  const end = dateValue($('#periodEnd').value);
-  return rows.filter(row => row.fecha && row.fecha >= start && (!end || row.fecha <= end));
+  return rows.filter(inPeriod);
 }
 function activeRows() { return rowsInPeriod().filter(row => !terminal(row.status)); }
 function kamSummary() {
@@ -123,45 +134,49 @@ function kamSummary() {
   return [...groups.values()];
 }
 
-function renderBars(target, values, valueKey, formatter, alert = false, options = {}) {
+function renderBars(target, values, valueKey, formatter, alert = false) {
   const root = $(target);
   if (!values.length) { root.innerHTML = '<p>No hay cotizaciones disponibles.</p>'; return; }
   const max = Math.max(...values.map(item => item[valueKey]), 1);
-  root.innerHTML = `<div class="chart-list">${values.map(item => {
-    const label = item.label || item.kam || item.folio;
-    const action = item.id
-      ? `data-quote-id="${escapeHtml(item.id)}" data-source="${escapeHtml(item.source)}" title="Ver cotización ${escapeHtml(item.folio)} de ${escapeHtml(item.kam)}"`
-      : `data-kam="${escapeHtml(item.kam)}" title="Ver cotizaciones de ${escapeHtml(item.kam)}"`;
-    const name = options.onSelect ? `<button type="button" class="bar-label" ${action}>${escapeHtml(label)}</button>` : `<span title="${escapeHtml(label)}">${escapeHtml(label)}</span>`;
-    return `<div class="bar-row ${alert ? 'alert' : ''}">${name}<div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`;
-  }).join('')}</div>`;
+  root.innerHTML = `<div class="chart-list">${values.map(item => `<div class="bar-row ${alert ? 'alert' : ''}"><span title="${escapeHtml(item.label || item.kam || item.folio)}">${escapeHtml(item.label || item.kam || item.folio)}</span><div class="bar"><i style="width:${Math.max(3, item[valueKey] / max * 100)}%"></i></div><strong>${formatter(item[valueKey])}</strong></div>`).join('')}</div>`;
 }
 
 function renderCharts() {
   const kams = kamSummary();
-  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`, false, { onSelect: showKamQuotes });
+  renderBars('#mostQuotesChart', [...kams].sort((a, b) => b.count - a.count), 'count', value => `${value} cot.`);
   renderBars('#fewestQuotesChart', [...kams].sort((a, b) => a.count - b.count), 'count', value => `${value} cot.`);
-  renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money, false, { onSelect: showQuoteDetails });
-  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true, { onSelect: showQuoteDetails });
+  renderBars('#largestAmountChart', [...rowsInPeriod()].sort((a, b) => b.monto - a.monto).map(row => ({ ...row, label: `${row.folio} · ${row.kam}` })), 'monto', money);
+  renderBars('#staleQuotesChart', activeRows().filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias), 'dias', value => `${value} días`, true);
 }
 
 function renderKpis() {
-  const active = activeRows();
   const scopedRows = rowsInPeriod();
-  const total = scopedRows.reduce((sum, row) => sum + row.monto, 0);
+  const active = scopedRows.filter(row => !terminal(row.status));
+  const billing = billingRows.filter(row => row.monto !== null && inPeriod(row))
+    .map(row => ({ ...row, monto: numericAmount(row.monto) }));
+  const sum = records => records.reduce((total, row) => total + row.monto, 0);
   const stale = active.filter(row => (row.dias || 0) >= 7);
+  const total = sum(scopedRows);
+  const billedAmount = sum(billing);
+  const openAmount = sum(active);
+  const staleAmount = sum(stale);
+  const percentage = active.length ? Math.round(stale.length / active.length * 100) : 0;
+  const oldest = active.filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias)[0];
+  reportData = {
+    ...period, quotes: scopedRows, active, billing, kams: kamSummary(),
+    metrics: { billedAmount, quotedAmount: total, openAmount, staleAmount,
+      staleCount: stale.length, stalePercentage: percentage, oldest }
+  };
   $('#quotedAmount').textContent = money(total);
   $('#quoteCount').textContent = `${scopedRows.length} cotizaciones Firebase en el periodo`;
   $('#closedAmount').textContent = money(billedAmount);
-  $('#closedCount').textContent = `${billedCount} registros facturados en SAI`;
-  $('#openAmount').textContent = money(active.reduce((sum, row) => sum + row.monto, 0));
+  $('#closedCount').textContent = `${billing.length} registros facturados en SAI`;
+  $('#openAmount').textContent = money(openAmount);
   $('#openCount').textContent = `${active.length} cotizaciones activas`;
   $('#staleCount').textContent = `${stale.length} / ${active.length}`;
-  $('#staleFoot').textContent = `${stale.length ? money(stale.reduce((sum, row) => sum + row.monto, 0)) : 'Sin'} con 7+ días sin gestión`;
-  const percentage = active.length ? Math.round(stale.length / active.length * 100) : 0;
+  $('#staleFoot').textContent = `${stale.length ? money(staleAmount) : 'Sin'} con 7+ días sin gestión`;
   $('#heroValue').textContent = `${percentage}%`;
-  $('#heroDescription').innerHTML = `de las cotizaciones activas llevan <strong>7 o más días sin gestión</strong> — <span class="num">${money(stale.reduce((sum, row) => sum + row.monto, 0))}</span> expuestos.`;
-  const oldest = active.filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias)[0];
+  $('#heroDescription').innerHTML = `de las cotizaciones activas llevan <strong>7 o más días sin gestión</strong> — <span class="num">${money(staleAmount)}</span> expuestos.`;
   $('#heroSub').textContent = oldest ? `La oportunidad sin gestión más antigua lleva ${oldest.dias} días: ${oldest.folio} · ${oldest.kam}.` : 'No hay fechas suficientes para calcular antigüedad de gestión.';
 }
 
@@ -182,35 +197,6 @@ function renderTable() {
   document.querySelectorAll('#segTable thead th').forEach(th => th.classList.toggle('sorted', th.dataset.key === sort.key && sort.direction === -1));
 }
 
-function showKamQuotes(kam) {
-  const quoteRows = rowsInPeriod()
-    .filter(row => row.kam === kam)
-    .sort((left, right) => (right.fecha?.getTime() || 0) - (left.fecha?.getTime() || 0));
-  const total = quoteRows.reduce((sum, row) => sum + row.monto, 0);
-  $('#kamQuotesTitle').textContent = `Cotizaciones de ${kam}`;
-  $('#kamQuotesSummary').textContent = `${quoteRows.length} cotizaciones · ${money(total)} en el periodo seleccionado`;
-  $('#kamQuotesBody').innerHTML = quoteRows.map(row => `<tr><td>${row.fecha ? row.fecha.toLocaleDateString('es-MX') : '—'}</td><td class="figure">${escapeHtml(row.folio)}</td><td>${escapeHtml(row.medico)}</td><td>${escapeHtml(row.paciente)}</td><td class="num-col figure">${money(row.monto)}</td><td>${escapeHtml(row.status)}</td><td class="num-col">${row.dias ?? '—'}</td></tr>`).join('') || '<tr><td colspan="7">No hay cotizaciones para este KAM en el periodo seleccionado.</td></tr>';
-  const dialog = $('#kamQuotesDialog');
-  if (dialog.open) dialog.close();
-  dialog.showModal();
-}
-
-function showQuoteDetails(row) {
-  $('#kamQuotesTitle').textContent = `Cotización de ${row.kam}`;
-  $('#kamQuotesSummary').textContent = `Folio ${row.folio} · ${row.fecha ? row.fecha.toLocaleDateString('es-MX') : 'Sin fecha de emisión'}`;
-  $('#kamQuotesBody').innerHTML = `<tr><td>${row.fecha ? row.fecha.toLocaleDateString('es-MX') : '—'}</td><td class="figure">${escapeHtml(row.folio)}</td><td>${escapeHtml(row.medico)}</td><td>${escapeHtml(row.paciente)}</td><td class="num-col figure">${money(row.monto)}</td><td>${escapeHtml(row.status)}</td><td class="num-col">${row.dias ?? '—'}</td></tr>`;
-  const dialog = $('#kamQuotesDialog');
-  if (dialog.open) dialog.close();
-  dialog.showModal();
-}
-
-function openQuoteFromChart(event) {
-  const button = event.target.closest('.bar-label');
-  if (!button?.dataset.quoteId) return;
-  const row = rows.find(item => item.id === button.dataset.quoteId && item.source === button.dataset.source);
-  if (row) showQuoteDetails(row);
-}
-
 function fillKamFilter() {
   const current = $('#segKamFilter').value;
   const kams = [...new Set(rowsInPeriod().map(row => row.kam).filter(kam => kam !== 'Sin KAM asignado'))].sort((a, b) => a.localeCompare(b, 'es-MX'));
@@ -218,14 +204,7 @@ function fillKamFilter() {
   $('#segKamFilter').value = kams.includes(current) ? current : '';
 }
 
-function refreshBillingForPeriod() {
-  const start = dateValue($('#periodStart').value) || REPORT_START;
-  const end = dateValue($('#periodEnd').value);
-  const scopedBilling = billingRows.filter(row => row.fecha && row.fecha >= start && (!end || row.fecha <= end) && row.monto !== null);
-  billedAmount = scopedBilling.reduce((sum, row) => sum + numericAmount(row.monto), 0);
-  billedCount = scopedBilling.length;
-}
-function render() { refreshBillingForPeriod(); fillKamFilter(); renderKpis(); renderCharts(); renderTable(); }
+function render() { fillKamFilter(); renderKpis(); renderCharts(); renderTable(); updateExportButton(); }
 
 function connect() {
   // El reporte comercial solicitado es exclusivo de Sanaré; Nomad no se consulta.
@@ -236,12 +215,16 @@ function connect() {
     const db = getFirestore(initializeApp(config, `reporte-${key}`));
     onSnapshot(collection(db, 'cotizaciones'), snapshot => {
       sources.set(key, snapshot.docs.map(doc => normalize(doc, key.toUpperCase())));
+      firebaseReady = sources.size === configured.length;
       // Mantiene el mismo periodo histórico que Llenado SAI: desde el 01/06/2026.
       rows = [...sources.values()].flat().filter(row => row.fecha && row.fecha >= REPORT_START);
       render();
       firebaseStatus = `Firebase en tiempo real · ${configured.length} fuente(s) · ${new Date().toLocaleTimeString('es-MX')}`;
       renderConnectionState();
     }, error => {
+      sources.delete(key);
+      firebaseReady = false;
+      updateExportButton();
       console.error(`Firebase ${key}`, error);
       firebaseStatus = error.code === 'permission-denied' ? 'Firebase bloqueó la lectura: revise Authentication y las reglas de Firestore.' : `No se pudo leer ${key}: ${error.message}`;
       renderConnectionState();
@@ -265,8 +248,9 @@ async function connectSupabase() {
       if (!(data || []).length) break;
     } while (count === null || allBillingRows.length < count);
     billingRows = allBillingRows.map(row => ({ fecha: dateValue(row.fecha_infusion), monto: row.monto_del_servicio }));
+    billingReady = true;
     render();
-    supabaseStatus = `Captura SAI · ${count ?? billedCount} registro(s) · ${new Date().toLocaleTimeString('es-MX')}`;
+    supabaseStatus = `Captura SAI · ${count ?? billingRows.length} registro(s) · ${new Date().toLocaleTimeString('es-MX')}`;
     renderConnectionState();
   };
   try {
@@ -276,6 +260,8 @@ async function connectSupabase() {
       .subscribe();
   } catch (error) { handleError(error); }
   function handleError(error) {
+    billingReady = false;
+    updateExportButton();
     console.error('Supabase SAI', error);
     supabaseStatus = `No se pudo leer captura SAI: ${error.message || 'verifique las políticas de Supabase'}`;
     renderConnectionState();
@@ -285,15 +271,32 @@ async function connectSupabase() {
 document.querySelectorAll('#segTable thead th').forEach(th => th.addEventListener('click', () => { sort = { key: th.dataset.key, direction: sort.key === th.dataset.key ? -sort.direction : 1 }; renderTable(); }));
 $('#segSearch').addEventListener('input', renderTable);
 $('#segKamFilter').addEventListener('change', renderTable);
-$('#mostQuotesChart').addEventListener('click', event => {
-  const button = event.target.closest('.bar-label');
-  if (button?.dataset.kam) showKamQuotes(button.dataset.kam);
+$('#periodFilter').addEventListener('submit', event => {
+  event.preventDefault();
+  const start = dateValue($('#periodStart').value) || REPORT_START;
+  let end = dateValue($('#periodEnd').value);
+  if (end && end < start) {
+    $('#periodEnd').value = $('#periodStart').value || REPORT_START_ISO;
+    end = start;
+  }
+  period = { start, end };
+  render();
 });
-$('#staleQuotesChart').addEventListener('click', openQuoteFromChart);
-$('#largestAmountChart').addEventListener('click', openQuoteFromChart);
-$('#kamQuotesDialog').addEventListener('click', event => {
-  if (event.target === event.currentTarget || event.target.closest('[data-close-dialog]')) event.currentTarget.close();
+$('#downloadExcel').addEventListener('click', async () => {
+  if (!firebaseReady || !billingReady || exporting) return;
+  exporting = true;
+  updateExportButton();
+  $('#exportStatus').textContent = 'Preparando el reporte…';
+  try {
+    await downloadCommercialWorkbook(reportData);
+    $('#exportStatus').textContent = 'Descarga iniciada.';
+  } catch (error) {
+    console.error('Exportación Excel', error);
+    $('#exportStatus').textContent = 'No se pudo generar el Excel. Intenta de nuevo.';
+  } finally {
+    exporting = false;
+    updateExportButton();
+  }
 });
-$('#periodFilter').addEventListener('submit', event => { event.preventDefault(); if ($('#periodEnd').value && $('#periodEnd').value < $('#periodStart').value) { $('#periodEnd').value = $('#periodStart').value; } render(); });
 try { connect(); } catch (error) { console.error(error); firebaseStatus = 'No se pudo cargar la configuración Firebase.'; renderConnectionState(); }
 connectSupabase();

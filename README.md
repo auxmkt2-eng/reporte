@@ -12,6 +12,8 @@ Cada gráfica presenta todos los registros aplicables, no una selección de cinc
 
 El filtro **Desde / Hasta** actualiza todas las tarjetas, gráficas y la tabla con el periodo seleccionado. El inicio predeterminado es el 01/06/2026.
 
+**Descargar Excel** exporta el periodo aplicado completo cuando terminan de cargar Firebase y captura SAI. El archivo contiene el resumen ejecutivo, el desempeño por KAM, todas las cotizaciones ordenadas por monto, el seguimiento de las abiertas y el detalle de facturación SAI. La búsqueda y el filtro de KAM de la tabla no limitan el archivo. La descarga se genera en el navegador con ExcelJS 4.4.0, cargado desde jsDelivr.
+
 Puede arrancar el servidor desde la carpeta raíz con `ABRIR-DASHBOARD.cmd` y abrir `http://localhost:4173/reporte-tiempo-real/`, o servir esta carpeta con cualquier servidor estático. No abra el HTML directamente, porque Firebase requiere HTTP/HTTPS.
 
 Las gráficas muestran: KAM con más y menos cotizaciones, las cotizaciones individuales de mayor monto y las oportunidades abiertas con más días sin gestión. Para antigüedad, usa la última fecha de seguimiento disponible; si no existe, usa la fecha de emisión y lo indica en pantalla.
