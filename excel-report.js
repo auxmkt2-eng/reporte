@@ -7,8 +7,30 @@ const fill = color => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF
 const formatDate = date => date.toLocaleDateString('es-MX');
 const excelDate = date => date && new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
 
+function billingKamLookup(quotes) {
+  const normalizeName = value => String(value ?? '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  const keyFor = (patient, doctor) => {
+    const patientName = normalizeName(patient);
+    const doctorName = normalizeName(doctor).replace(/^(DR|DRA|DOCTOR|DOCTORA) /, '');
+    return patientName && doctorName ? JSON.stringify([patientName, doctorName]) : null;
+  };
+  const matches = new Map();
+  for (const quote of quotes) {
+    if (!quote.kam || quote.kam === 'Sin KAM asignado') continue;
+    const key = keyFor(quote.paciente, quote.medico);
+    if (!key) continue;
+    if (!matches.has(key)) matches.set(key, new Set());
+    matches.get(key).add(quote.kam);
+  }
+  return row => {
+    const kams = matches.get(keyFor(row.paciente, row.medico));
+    return kams?.size === 1 ? [...kams][0] : 'Sin KAM confirmado';
+  };
+}
+
 export function buildCommercialWorkbook(ExcelJS, data) {
-  const { start, end, metrics, kams, quotes, active, billing } = data;
+  const { start, end, metrics, kams, quotes, active, billing, quoteHistory = quotes } = data;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'INNVIDA';
   const period = `Periodo aplicado: ${formatDate(start)} al ${end ? formatDate(end) : 'corte disponible'} · MXN`;
@@ -105,9 +127,15 @@ export function buildCommercialWorkbook(ExcelJS, data) {
       ...quoteValues(row), row.dias, row.status, row.hasFollowUp ? 'Última gestión' : 'Emisión'
     ]), { highlightDays: 7 });
 
-  addSheet('Facturación SAI', 'Detalle de facturación SAI', 'Registros que componen el monto facturado del periodo.',
-    [['Fecha de infusión', 25, 'dd/mm/yyyy'], ['Monto del servicio (MXN)', 48, currency]],
-    [...billing].sort((a, b) => b.fecha - a.fecha).map(row => [excelDate(row.fecha), row.monto]));
+  const findBillingKam = billingKamLookup(quoteHistory);
+  addSheet('Facturación SAI', 'Detalle de facturación SAI',
+    'Paciente y médico de SAI. El KAM proviene de Firebase si el paciente y el médico coinciden y solo hay un KAM asignado.',
+    [['Fecha de infusión', 22, 'dd/mm/yyyy'], ['Paciente', 48], ['KAM', 48],
+      ['Médico', 52], ['Monto del servicio (MXN)', 30, currency]],
+    [...billing].sort((a, b) => b.fecha - a.fecha).map(row => [
+      excelDate(row.fecha), row.paciente || 'Sin paciente registrado', findBillingKam(row),
+      row.medico || 'Sin médico registrado', row.monto
+    ]));
 
   return workbook;
 }

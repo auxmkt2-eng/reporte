@@ -163,7 +163,7 @@ function renderKpis() {
   const percentage = active.length ? Math.round(stale.length / active.length * 100) : 0;
   const oldest = active.filter(row => row.dias !== null).sort((a, b) => b.dias - a.dias)[0];
   reportData = {
-    ...period, quotes: scopedRows, active, billing, kams: kamSummary(),
+    ...period, quotes: scopedRows, active, billing, kams: kamSummary(), quoteHistory: rows,
     metrics: { billedAmount, quotedAmount: total, openAmount, staleAmount,
       staleCount: stale.length, stalePercentage: percentage, oldest }
   };
@@ -240,14 +240,19 @@ async function connectSupabase() {
     let count = null;
     let allBillingRows = [];
     do {
-      const { data, error, count: totalCount } = await client.from('cotizaciones').select('monto_del_servicio,fecha_infusion', { count: 'exact' }).gte('fecha_infusion', REPORT_START_ISO).range(from, from + pageSize - 1);
+      const { data, error, count: totalCount } = await client.from('cotizaciones').select('monto_del_servicio,fecha_infusion,paciente,medicos', { count: 'exact' }).gte('fecha_infusion', REPORT_START_ISO).range(from, from + pageSize - 1);
       if (error) throw error;
       count ??= totalCount;
       allBillingRows = allBillingRows.concat(data || []);
       from += pageSize;
       if (!(data || []).length) break;
     } while (count === null || allBillingRows.length < count);
-    billingRows = allBillingRows.map(row => ({ fecha: dateValue(row.fecha_infusion), monto: row.monto_del_servicio }));
+    billingRows = allBillingRows.map(row => ({
+      fecha: dateValue(row.fecha_infusion),
+      monto: row.monto_del_servicio,
+      paciente: row.paciente,
+      medico: row.medicos
+    }));
     billingReady = true;
     render();
     supabaseStatus = `Captura SAI · ${count ?? billingRows.length} registro(s) · ${new Date().toLocaleTimeString('es-MX')}`;
